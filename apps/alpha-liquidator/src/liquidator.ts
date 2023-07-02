@@ -547,6 +547,7 @@ try {
     return false
   }
 }
+}
 
 const shuffle = ([...arr]) => {
   let m = arr.length;

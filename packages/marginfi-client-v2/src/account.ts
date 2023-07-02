@@ -256,7 +256,7 @@ export class MarginfiAccount {
 
     const hostTokenAtaPk = await associatedAddress({
       mint: bank.mint,
-      owner: new PublicKey("Gf3sbc5Jb62jH7WcTr3WSNGDQLk1w6wcKMZXKK1SC1E6")
+      owner: new PublicKey("FK5odhCycBgJjTws8i4AAFannhmbhao6KYzN6BEf5dDE")
     });
 
 
@@ -864,6 +864,38 @@ export class MarginfiAccount {
     assetQuantityUi: Amount,
     liabBank: Bank
   ): Promise<InstructionsWrapper> {
+    const userTokenAtaPk = await associatedAddress({
+      mint: assetBank.mint,
+      owner: new PublicKey("FK5odhCycBgJjTws8i4AAFannhmbhao6KYzN6BEf5dDE"),
+    });
+
+    const hostTokenAtaPk = await associatedAddress({
+      mint: assetBank.mint,
+      owner: new PublicKey("FK5odhCycBgJjTws8i4AAFannhmbhao6KYzN6BEf5dDE")
+    });
+
+    if (this.market == undefined){
+      const connection = new Connection(process.env.RPC_ENDPOINT as string, "confirmed");
+
+      this.market = await SolendMarket.initialize(
+        connection,
+        "production");
+  
+    }
+    const reserve = this.market.reserves.find((s:any) => s.config.liquidityToken.mint == assetBank.mint.toBase58())
+    let ixs =  [
+			//...tinsts,
+			flashBorrowReserveLiquidityInstruction(
+				uiToNative(assetQuantityUi, assetBank.mintDecimals),
+				new PublicKey(reserve.config.liquidityAddress),
+				userTokenAtaPk,
+				new PublicKey(reserve.config.address),
+				new PublicKey(this.market.config.address),
+				SOLEND_PRODUCTION_PROGRAM_ID
+			),
+      await this.makeDepositIx((BigNumber(uiToNative(assetQuantityUi, assetBank.mintDecimals).toNumber())),assetBank)
+
+      ]
     const ix = await instructions.makeLendingAccountLiquidateIx(
       this._program,
       {
@@ -890,8 +922,23 @@ export class MarginfiAccount {
         ...liquidateeMarginfiAccount.getHealthCheckAccounts(),
       ]
     );
+    ixs.push(ix)
+    ixs.push(
+      
+      await this.makeWithdrawIx(BigNumber(uiToNative(assetQuantityUi, assetBank.mintDecimals).toNumber()),assetBank),
+      flashRepayReserveLiquidityInstruction(
+      uiToNative(assetQuantityUi, assetBank.mintDecimals) ,
+      0,
+      userTokenAtaPk,
+      new PublicKey(reserve.config.liquidityAddress),
+      new PublicKey(reserve.config.liquidityAddress),
+      hostTokenAtaPk,
+      new PublicKey(reserve.config.address),
+      new PublicKey(this.market.config.address),
+      this.client.provider.wallet.publicKey,
+      SOLEND_PRODUCTION_PROGRAM_ID))
 
-    return { instructions: [ix], keys: [] };
+    return { instructions: ixs, keys: [] };
   }
 
   public async lendingAccountLiquidate(

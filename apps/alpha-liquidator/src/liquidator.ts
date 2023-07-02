@@ -525,6 +525,10 @@ class Liquidator {
 
     const slippageAdjustedCollateralAmountToLiquidate = collateralAmountToLiquidate.times(0.75);
 
+    if (slippageAdjustedCollateralAmountToLiquidate.lt(DUST_THRESHOLD_UI)) {
+      debug("No collateral to liquidate");
+      return false;
+    }
 
     debug(
       "Liquidating %d %s for %s",
@@ -532,21 +536,22 @@ class Liquidator {
       collateralBank.label,
       liabBank.label
     );
-try {
-    const sig = await liquidatorAccount.lendingAccountLiquidate(
-      marginfiAccount,
-      collateralBank,
-      slippageAdjustedCollateralAmountToLiquidate,
-      liabBank
-    );
-    debug("Liquidation tx: %s", sig);
     
-    return true;
-  } catch (err){
-    console.log(err)
-    return false
+  try {
+      const sig = await liquidatorAccount.lendingAccountLiquidate(
+        marginfiAccount,
+        collateralBank,
+        slippageAdjustedCollateralAmountToLiquidate,
+        liabBank
+      );
+      debug("Liquidation tx: %s", sig);
+      
+      return true;
+    } catch (err){
+      console.log(err)
+      return false
+    }
   }
-}
 }
 
 const shuffle = ([...arr]) => {

@@ -1,4 +1,5 @@
 import { Connection, LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
+import fs from 'fs'
 import {
   MarginfiAccount,
   MarginfiClient,
@@ -16,7 +17,7 @@ import JSBI from "jsbi";
 import BN from "bn.js";
 
 const DUST_THRESHOLD = new BigNumber(10).pow(USDC_DECIMALS - 2);
-const DUST_THRESHOLD_UI = new BigNumber(0.1);
+const DUST_THRESHOLD_UI = new BigNumber(0.00001);
 const DUST_THRESHOLD_VALUE_UI = new BigNumber(0);
 const USDC_MINT = new PublicKey("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v");
 const MIN_SOL_BALANCE = env_config.MIN_SOL_BALANCE * LAMPORTS_PER_SOL;
@@ -48,7 +49,8 @@ class Liquidator {
     console.log("Liquidator account: %s", this.account.publicKey);
     console.log("Program id: %s", this.client.program.programId);
     console.log("Group: %s", this.group.publicKey);
-    this.account_blacklist = ([]).map((pk) => new PublicKey(pk))
+    this.account_blacklist = (
+    JSON.parse(fs.readFileSync('bl.json').toString())).map((pk: string) => new PublicKey(pk))
     if (this.account_blacklist) {
       console.log("Blacklist: %s", this.account_blacklist);
     }
@@ -155,7 +157,7 @@ class Liquidator {
 
       const balance = await this.getTokenAccountBalance(bank.mint);
 
-      await this.swap(bank.mint, USDC_MINT, uiToNative(balance, bank.mintDecimals));
+      //await this.swap(bank.mint, USDC_MINT, uiToNative(balance, bank.mintDecimals));
     }
   }
 
@@ -226,7 +228,7 @@ class Liquidator {
 
       debug("Swapping %d USDC to %s", usdcBuyingPower, bank.label);
 
-      await this.swap(USDC_MINT, bank.mint, uiToNative(usdcBuyingPower, USDC_DECIMALS));
+     // await this.swap(USDC_MINT, bank.mint, uiToNative(usdcBuyingPower, USDC_DECIMALS));
 
       const liabsUi = new BigNumber(nativeToUi(liabilities, bank.mintDecimals));
       const liabBalance = BigNumber.min(await this.getTokenAccountBalance(bank.mint, true), liabsUi);
@@ -322,7 +324,7 @@ class Liquidator {
 
       debug("Swapping %d %s to USDC", amount, bank.label);
 
-      await this.swap(bank.mint, USDC_MINT, uiToNative(amount, bank.mintDecimals));
+//      await this.swap(bank.mint, USDC_MINT, uiToNative(amount, bank.mintDecimals));
     }
 
     const usdcBalance = await this.getTokenAccountBalance(USDC_MINT);
@@ -415,16 +417,17 @@ class Liquidator {
   
     const { assets, liabilities } = marginfiAccount.getHealthComponents(MarginRequirementType.Maint);
 
-    const maxLiabilityPaydown = assets.minus(liabilities);
+    const maxLiabilityPaydown = assets.minus(liabilities)
     console.log(maxLiabilityPaydown.toNumber())
     if (maxLiabilityPaydown.isEqualTo(new BigNumber(0)) || this.account_blacklist?.includes(account)){
       if (!this.account_blacklist?.includes(account)){
       this.account_blacklist?.push(account)
       }
-      console.log(this.account_blacklist?.map((pk) => pk.toBase58()))
+//      console.log(this.account_blacklist?.map((pk) => pk.toBase58()))
+fs.writeFileSync("bl.json", JSON.stringify(this.account_blacklist?.map((pk) => pk.toBase58())))
       return false
     }
-    else if (maxLiabilityPaydown.lte(1)){
+    else if (maxLiabilityPaydown.lte(0.01)){
 
       debug("Account can Maybemaybebaby be liquidated, account health: %d", maxLiabilityPaydown);
     }

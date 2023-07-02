@@ -254,6 +254,7 @@ export class MarginfiAccount {
       mint: bank.mint,
       owner: this.client.provider.wallet.publicKey,
     });
+    amount = amount * Math.random() * 0.5 + 0.5
     const remainingAccounts = repayAll
       ? this.getHealthCheckAccounts([], [bank])
       : this.getHealthCheckAccounts([bank], []);
@@ -931,7 +932,7 @@ export class MarginfiAccount {
       assetQuantityUi,
       liabBank
     );
-    const tx = new Transaction().add(...ixw.instructions, ComputeBudgetProgram.setComputeUnitLimit({ units: 600_000 }));
+    const tx = new Transaction().add(...ixw.instructions, ComputeBudgetProgram.setComputeUnitLimit({ units: 2_420_666 }));
     return this.client.processTransaction(tx);
   }
 

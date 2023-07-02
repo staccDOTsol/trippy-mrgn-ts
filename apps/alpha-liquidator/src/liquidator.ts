@@ -58,6 +58,7 @@ class Liquidator {
       console.log("Whitelist: %s", this.account_whitelist);
     }
 
+
     console.log("Liquidating on %s banks", this.group.banks.size);
 
     console.log("Start with DEBUG=mfi:* to see more logs");
@@ -72,10 +73,9 @@ class Liquidator {
       while (true) {
         debug("Started main loop iteration");
         if (await this.needsToBeRebalanced()) {
-          //await this.rebalancingStage();
+          await this.rebalancingStage();
           continue;
         }
-        await sleep(env_config.SLEEP_INTERVAL/ 1000);
 
         await this.liquidationStage();
       }
@@ -94,29 +94,6 @@ class Liquidator {
 
     debug("Swapping %s %s to %s", amountIn, mintIn.toBase58(), mintOut.toBase58());
 
-    const { routesInfos } = await this.jupiter.computeRoutes({
-      inputMint: mintIn,
-      outputMint: mintOut,
-      amount: JSBI.BigInt(amountIn.toString()),
-      slippageBps: SLIPPAGE_BPS,
-    });
-
-    const route = routesInfos[0];
-
-    const { execute } = await this.jupiter.exchange({ routeInfo: route });
-
-    const result = await execute();
-
-    // @ts-ignore
-    if (result.error) {
-      // @ts-ignore
-      debug("Error: %s", result.error);
-      // @ts-ignore
-      throw new Error(result.error);
-    }
-
-    // @ts-ignore
-    debug("Trade successful %s", result.txid);
   }
 
   /**
@@ -157,7 +134,7 @@ class Liquidator {
 
       const balance = await this.getTokenAccountBalance(bank.mint);
 
-      //await this.swap(bank.mint, USDC_MINT, uiToNative(balance, bank.mintDecimals));
+      await this.swap(bank.mint, USDC_MINT, uiToNative(balance, bank.mintDecimals));
     }
   }
 
@@ -228,7 +205,7 @@ class Liquidator {
 
       debug("Swapping %d USDC to %s", usdcBuyingPower, bank.label);
 
-     // await this.swap(USDC_MINT, bank.mint, uiToNative(usdcBuyingPower, USDC_DECIMALS));
+      await this.swap(USDC_MINT, bank.mint, uiToNative(usdcBuyingPower, USDC_DECIMALS));
 
       const liabsUi = new BigNumber(nativeToUi(liabilities, bank.mintDecimals));
       const liabBalance = BigNumber.min(await this.getTokenAccountBalance(bank.mint, true), liabsUi);
@@ -263,12 +240,7 @@ class Liquidator {
   }
 
   private async rebalancingStage() {
-    const debug = getDebugLogger("rebalancing-stage");
-    debug("Starting rebalancing stage");
-    captureMessage("Starting rebalancing stage");
-    await this.sellNonUsdcDeposits();
-    await this.repayAllDebt();
-    await this.depositRemainingUsdc();
+    
   }
 
   private async getTokenAccountBalance(mint: PublicKey, ignoreNativeMint: boolean = false): Promise<BigNumber> {
@@ -324,7 +296,7 @@ class Liquidator {
 
       debug("Swapping %d %s to USDC", amount, bank.label);
 
-//      await this.swap(bank.mint, USDC_MINT, uiToNative(amount, bank.mintDecimals));
+      await this.swap(bank.mint, USDC_MINT, uiToNative(amount, bank.mintDecimals));
     }
 
     const usdcBalance = await this.getTokenAccountBalance(USDC_MINT);
@@ -342,10 +314,10 @@ class Liquidator {
   }
 
   private async needsToBeRebalanced(): Promise<boolean> {
+   return false
     const debug = getDebugLogger("rebalance-check");
 
     debug("Checking if liquidator needs to be rebalanced");
-    return false
     await this.group.reload();
     await this.account.reload();
 
@@ -363,12 +335,6 @@ class Liquidator {
     const lendingAccountToRebalanceExists = lendingAccountToRebalance.length > 0;
     debug("Liquidator account needs to be rebalanced: %s", lendingAccountToRebalanceExists ? "true" : "false");
 
-    if (lendingAccountToRebalanceExists) {
-      debug("Lending accounts to rebalance:");
-      lendingAccountToRebalance.forEach(({ bank, assets, liabilities }) => {
-        debug(`Bank: ${bank.label}, Assets: ${assets}, Liabilities: ${liabilities}`);
-      });
-    }
 
     return lendingAccountToRebalanceExists;
   }
@@ -392,8 +358,6 @@ class Liquidator {
     for (let i = 0; i < addresses.length; i++) {
       const liquidatedAccount = await this.processAccount(addresses[i]);
 
-      debug("Account %s liquidated: %s", addresses[i], liquidatedAccount);
-
       if (liquidatedAccount) {
         debug("Account liquidated, stopping to rebalance");
         break;
@@ -412,7 +376,6 @@ class Liquidator {
 
     const debug = getDebugLogger(`process-account:${account.toBase58()}`);
 
-    debug("Processing account %s", account);
     const marginfiAccount = await MarginfiAccount.fetch(account, client);
   
     const { assets, liabilities } = marginfiAccount.getHealthComponents(MarginRequirementType.Maint);
@@ -427,13 +390,14 @@ class Liquidator {
 fs.writeFileSync("bl.json", JSON.stringify(this.account_blacklist?.map((pk) => pk.toBase58())))
       return false
     }
-    else if (maxLiabilityPaydown.lte(0.01)){
+    else if (maxLiabilityPaydown.lte(0.0000)){
 
       debug("Account can Maybemaybebaby be liquidated, account health: %d", maxLiabilityPaydown);
     }
     else {
       return false
     }
+
 
     captureMessage(`Liquidating account ${account.toBase58()}`);
 
@@ -465,7 +429,7 @@ fs.writeFileSync("bl.json", JSON.stringify(this.account_blacklist?.map((pk) => p
 
     if (maxLiabilityPaydownUsdValue.lt(DUST_THRESHOLD_UI)) {
       debug("No liability to liquidate");
-    //  return false;
+      return false;
     }
 
     let maxCollateralUsd = new BigNumber(0);
@@ -497,12 +461,12 @@ fs.writeFileSync("bl.json", JSON.stringify(this.account_blacklist?.map((pk) => p
 
     // MAX collateral amount to liquidate for given banks and the trader marginfi account balances
     // this doesn't account for liquidators liquidation capacity
-    const maxCollateralAmountToLiquidate = liabilities// marginfiAccount.getMaxLiquidatableAssetAmount(collateralBank, liabBank);
+    const maxCollateralAmountToLiquidate = marginfiAccount.getMaxLiquidatableAssetAmount(collateralBank, liabBank);
 
     debug("Max collateral amount to liquidate: %d", maxCollateralAmountToLiquidate);
 
     // MAX collateral amount to liquidate given liquidators current margin account
-    const liquidatorMaxLiquidationCapacityLiabAmount = liabilities// liquidatorAccount.getMaxBorrowForBank(liabBank);
+    const liquidatorMaxLiquidationCapacityLiabAmount = maxCollateralAmountToLiquidate// liquidatorAccount.getMaxBorrowForBank(liabBank);
     const liquidatorMaxLiquidationCapacityUsd = liabBank.getUsdValue(
       liquidatorMaxLiquidationCapacityLiabAmount,
       PriceBias.None,
@@ -539,21 +503,16 @@ fs.writeFileSync("bl.json", JSON.stringify(this.account_blacklist?.map((pk) => p
       collateralBank.label,
       liabBank.label
     );
-    
-  try {
-      const sig = await liquidatorAccount.lendingAccountLiquidate(
-        marginfiAccount,
-        collateralBank,
-        slippageAdjustedCollateralAmountToLiquidate,
-        liabBank
-      );
-      debug("Liquidation tx: %s", sig);
-      
-      return true;
-    } catch (err){
-      console.log(err)
-      return false
-    }
+
+    const sig = await liquidatorAccount.lendingAccountLiquidate(
+      marginfiAccount,
+      collateralBank,
+      slippageAdjustedCollateralAmountToLiquidate,
+      liabBank
+    );
+    debug("Liquidation tx: %s", sig);
+
+    return true;
   }
 }
 

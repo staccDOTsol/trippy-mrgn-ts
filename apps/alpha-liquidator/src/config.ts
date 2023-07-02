@@ -78,7 +78,10 @@ if (env_config.SENTRY) {
 }
 
 process.on("unhandledRejection", (up) => {
-  throw up;
+  // @ts-ignore
+  console.log(up.toString())
+  
+
 });
 
 export function captureException(err: any) {

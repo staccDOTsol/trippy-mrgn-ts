@@ -532,7 +532,7 @@ class Liquidator {
       collateralBank.label,
       liabBank.label
     );
-
+try {
     const sig = await liquidatorAccount.lendingAccountLiquidate(
       marginfiAccount,
       collateralBank,
@@ -540,8 +540,11 @@ class Liquidator {
       liabBank
     );
     debug("Liquidation tx: %s", sig);
-
+    
     return true;
+  } catch (err){
+    console.log(err)
+    return false
   }
 }
 

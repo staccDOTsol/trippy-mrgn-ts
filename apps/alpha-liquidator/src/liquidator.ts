@@ -34,7 +34,7 @@ class Liquidator {
     readonly wallet: NodeWallet,
     readonly jupiter: Jupiter,
     readonly account_whitelist: PublicKey[] | undefined,
-    readonly account_blacklist: PublicKey[] | undefined
+    public account_blacklist: PublicKey[] | undefined
   ) { }
 
   get group() {
@@ -48,6 +48,7 @@ class Liquidator {
     console.log("Liquidator account: %s", this.account.publicKey);
     console.log("Program id: %s", this.client.program.programId);
     console.log("Group: %s", this.group.publicKey);
+    this.account_blacklist = []
     if (this.account_blacklist) {
       console.log("Blacklist: %s", this.account_blacklist);
     }
@@ -69,9 +70,10 @@ class Liquidator {
       while (true) {
         debug("Started main loop iteration");
         if (await this.needsToBeRebalanced()) {
-          await this.rebalancingStage();
+          //await this.rebalancingStage();
           continue;
         }
+        await sleep(env_config.SLEEP_INTERVAL/ 1000);
 
         await this.liquidationStage();
       }
@@ -341,6 +343,7 @@ class Liquidator {
     const debug = getDebugLogger("rebalance-check");
 
     debug("Checking if liquidator needs to be rebalanced");
+    return false
     await this.group.reload();
     await this.account.reload();
 
@@ -399,9 +402,10 @@ class Liquidator {
   private async processAccount(account: PublicKey): Promise<boolean> {
     const client = this.client;
     const group = this.group;
+    
     const liquidatorAccount = this.account;
 
-    if (account.equals(liquidatorAccount.publicKey)) {
+    if (account.equals(liquidatorAccount.publicKey) || this.account_blacklist?.includes(account)) {
       return false;
     }
 
@@ -409,6 +413,15 @@ class Liquidator {
 
     debug("Processing account %s", account);
     const marginfiAccount = await MarginfiAccount.fetch(account, client);
+
+    const { assets, liabilities } = marginfiAccount.getHealthComponents(MarginRequirementType.Maint);
+
+    const maxLiabilityPaydown = assets.minus(liabilities);
+    console.log(maxLiabilityPaydown.toNumber())
+    if (maxLiabilityPaydown.toNumber() == 0){
+      this.account_blacklist?.push(account)
+      return false
+    }
     if (marginfiAccount.canBeLiquidated()) {
       const { assets, liabilities } = marginfiAccount.getHealthComponents(MarginRequirementType.Maint);
 
@@ -449,7 +462,7 @@ class Liquidator {
 
     if (maxLiabilityPaydownUsdValue.lt(DUST_THRESHOLD_UI)) {
       debug("No liability to liquidate");
-      return false;
+    //  return false;
     }
 
     let maxCollateralUsd = new BigNumber(0);

@@ -35,7 +35,7 @@ async function start() {
   // each blockhash can last about 1 minute, we refresh every second
   setInterval(async () => {
     blockhashWithExpiryBlockHeight = await connection.getLatestBlockhash("confirmed");
-  }, 1000);
+  }, 30000);
 
   const store = {
     contextSlot: 0,

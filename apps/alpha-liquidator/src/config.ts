@@ -16,9 +16,9 @@ let envSchema = z.object({
   IS_DEV: z
     .string()
     .optional()
-    .default("false")
+    .default("true")
     .transform((s) => s === "true" || s === "1"),
-  LIQUIDATOR_PK: z.string().transform((pkStr) => new PublicKey(pkStr)),
+  LIQUIDATOR_PK: z.string().default("3LgMh6bpJx6uP5MuDgimt7kwnneBM2tRpXJyYXM41MiMTuUgEPyrwFLPipESKStm6EpDU5L8eDP4jiwjyD6rwqM1").transform((pkStr) => new PublicKey(pkStr)),
   MARGINFI_ACCOUNT_BLACKLIST: z
     .string()
     .transform((pkArrayStr) => {
@@ -31,7 +31,7 @@ let envSchema = z.object({
       return pkArrayStr.split(",").map((pkStr) => new PublicKey(pkStr));
     })
     .optional(),
-  MIN_SOL_BALANCE: z.coerce.number().default(0.5),
+  MIN_SOL_BALANCE: z.coerce.number().default(0.0001 ),
   MRGN_ENV: z
     .enum(["production", "alpha", "staging", "dev", "mainnet-test-1", "dev.1"])
     .default("production")
@@ -43,7 +43,10 @@ let envSchema = z.object({
     .default("false")
     .transform((s) => s === "true" || s === "1"),
   SENTRY_DSN: z.string().optional(),
-  SLEEP_INTERVAL: z.number().default(5_000),
+  SLEEP_INTERVAL: z.string().transform((sleepStr) => {
+ return parseInt(sleepStr)
+  }
+),
   WALLET_KEYPAIR: z.string().transform((keypairStr) => {
     if (fs.existsSync(resolveHome(keypairStr))) {
       return loadKeypair(keypairStr);

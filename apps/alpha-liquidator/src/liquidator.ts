@@ -48,7 +48,7 @@ class Liquidator {
     console.log("Liquidator account: %s", this.account.publicKey);
     console.log("Program id: %s", this.client.program.programId);
     console.log("Group: %s", this.group.publicKey);
-    this.account_blacklist = []
+    this.account_blacklist = ([]).map((pk) => new PublicKey(pk))
     if (this.account_blacklist) {
       console.log("Blacklist: %s", this.account_blacklist);
     }
@@ -402,10 +402,9 @@ class Liquidator {
   private async processAccount(account: PublicKey): Promise<boolean> {
     const client = this.client;
     const group = this.group;
-    
     const liquidatorAccount = this.account;
 
-    if (account.equals(liquidatorAccount.publicKey) || this.account_blacklist?.includes(account)) {
+    if (account.equals(liquidatorAccount.publicKey)) {
       return false;
     }
 
@@ -413,23 +412,24 @@ class Liquidator {
 
     debug("Processing account %s", account);
     const marginfiAccount = await MarginfiAccount.fetch(account, client);
-
+  
     const { assets, liabilities } = marginfiAccount.getHealthComponents(MarginRequirementType.Maint);
 
     const maxLiabilityPaydown = assets.minus(liabilities);
     console.log(maxLiabilityPaydown.toNumber())
-    if (maxLiabilityPaydown.toNumber() == 0){
+    if (maxLiabilityPaydown.isEqualTo(new BigNumber(0)) || this.account_blacklist?.includes(account)){
+      if (!this.account_blacklist?.includes(account)){
       this.account_blacklist?.push(account)
+      }
+      console.log(this.account_blacklist?.map((pk) => pk.toBase58()))
       return false
     }
-    if (marginfiAccount.canBeLiquidated()) {
-      const { assets, liabilities } = marginfiAccount.getHealthComponents(MarginRequirementType.Maint);
+    else if (maxLiabilityPaydown.lte(1)){
 
-      const maxLiabilityPaydown = assets.minus(liabilities);
-      debug("Account can be liquidated, account health: %d", maxLiabilityPaydown);
-    } else {
-      debug("Account cannot be liquidated");
-      return false;
+      debug("Account can Maybemaybebaby be liquidated, account health: %d", maxLiabilityPaydown);
+    }
+    else {
+      return false
     }
 
     captureMessage(`Liquidating account ${account.toBase58()}`);
@@ -494,12 +494,12 @@ class Liquidator {
 
     // MAX collateral amount to liquidate for given banks and the trader marginfi account balances
     // this doesn't account for liquidators liquidation capacity
-    const maxCollateralAmountToLiquidate = marginfiAccount.getMaxLiquidatableAssetAmount(collateralBank, liabBank);
+    const maxCollateralAmountToLiquidate = liabilities// marginfiAccount.getMaxLiquidatableAssetAmount(collateralBank, liabBank);
 
     debug("Max collateral amount to liquidate: %d", maxCollateralAmountToLiquidate);
 
     // MAX collateral amount to liquidate given liquidators current margin account
-    const liquidatorMaxLiquidationCapacityLiabAmount = liquidatorAccount.getMaxBorrowForBank(liabBank);
+    const liquidatorMaxLiquidationCapacityLiabAmount = liabilities// liquidatorAccount.getMaxBorrowForBank(liabBank);
     const liquidatorMaxLiquidationCapacityUsd = liabBank.getUsdValue(
       liquidatorMaxLiquidationCapacityLiabAmount,
       PriceBias.None,

@@ -525,10 +525,6 @@ class Liquidator {
 
     const slippageAdjustedCollateralAmountToLiquidate = collateralAmountToLiquidate.times(0.75);
 
-    if (slippageAdjustedCollateralAmountToLiquidate.lt(DUST_THRESHOLD_UI)) {
-      debug("No collateral to liquidate");
-      return false;
-    }
 
     debug(
       "Liquidating %d %s for %s",

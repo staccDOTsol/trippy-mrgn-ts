@@ -13,6 +13,12 @@ import {
   WrappedI80F48,
   wrappedI80F48toBigNumber,
 } from "@mrgnlabs/mrgn-common";
+const {
+  flashRepayReserveLiquidityInstruction,
+	flashBorrowReserveLiquidityInstruction, 
+  SolendMarket,
+  SOLEND_PRODUCTION_PROGRAM_ID
+} = require("@solendprotocol/solend-sdk");
 import { Address, BN, BorshCoder, translateAddress } from "@project-serum/anchor";
 import { associatedAddress } from "@project-serum/anchor/dist/cjs/utils/token";
 import { parsePriceData } from "@pythnetwork/client";
@@ -25,6 +31,7 @@ import {
   SystemProgram,
   Transaction,
   TransactionInstruction,
+  Connection
 } from "@solana/web3.js";
 import BigNumber from "bignumber.js";
 import { MarginfiClient } from ".";
@@ -33,13 +40,14 @@ import MarginfiGroup from "./group";
 import { MARGINFI_IDL } from "./idl";
 import instructions from "./instructions";
 import { AccountType, MarginfiConfig, MarginfiProgram } from "./types";
+import { string } from "superstruct";
 
 /**
  * Wrapper class around a specific marginfi account.
  */
 export class MarginfiAccount {
   public readonly publicKey: PublicKey;
-
+  public market: typeof SolendMarket;
   private _group: MarginfiGroup;
   private _authority: PublicKey;
   private _lendingBalances: Balance[];
@@ -240,11 +248,17 @@ export class MarginfiAccount {
    * @param repayAll (optional) Repay all the liability
    * @returns `LendingPool` transaction instruction
    */
-  async makeRepayIx(amount: Amount, bank: Bank, repayAll: boolean = false): Promise<InstructionsWrapper> {
+  async makeRepayIx(amount: Amount, bank: Bank, repayAll: boolean = true): Promise<InstructionsWrapper> {
     const userTokenAtaPk = await associatedAddress({
       mint: bank.mint,
       owner: this.client.provider.wallet.publicKey,
     });
+
+    const hostTokenAtaPk = await associatedAddress({
+      mint: bank.mint,
+      owner: new PublicKey("Gf3sbc5Jb62jH7WcTr3WSNGDQLk1w6wcKMZXKK1SC1E6")
+    });
+
 
     const remainingAccounts = repayAll
       ? this.getHealthCheckAccounts([], [bank])
@@ -262,9 +276,47 @@ export class MarginfiAccount {
       { amount: uiToNative(amount, bank.mintDecimals), repayAll },
       remainingAccounts
     );
+    if (this.market == undefined){
+      const connection = new Connection(process.env.RPC_ENDPOINT as string, "confirmed");
 
+      this.market = await SolendMarket.initialize(
+        connection,
+        "production");
+  
+    }
+    const reserve = this.market.reserves.find((s:any) => s.config.liquidityToken.mint == bank.mint.toBase58())
+    let ixs =  [
+			//...tinsts,
+			flashBorrowReserveLiquidityInstruction(
+				amount as number,
+				new PublicKey(reserve.config.liquidityAddress),
+				userTokenAtaPk,
+				new PublicKey(reserve.config.address),
+				new PublicKey(this.market.config.address),
+				SOLEND_PRODUCTION_PROGRAM_ID
+			)
+      ]
+    if (bank.mint.equals(NATIVE_MINT)){
+      ixs.push(...(await this.wrapInstructionForWSol(ix, amount)))
+    }
+    else {
+      ixs.push(ix)
+    }
+
+    ixs.push(flashRepayReserveLiquidityInstruction(
+      amount as number,
+      0,
+      userTokenAtaPk,
+      new PublicKey(reserve.config.liquidityAddress),
+      new PublicKey(reserve.config.liquidityAddress),
+      hostTokenAtaPk,
+      new PublicKey(reserve.config.address),
+      new PublicKey(this.market.config.address),
+      this.client.provider.wallet.publicKey,
+      SOLEND_PRODUCTION_PROGRAM_ID))
+    
     return {
-      instructions: bank.mint.equals(NATIVE_MINT) ? await this.wrapInstructionForWSol(ix, amount) : [ix],
+      instructions: ixs,
       keys: [],
     };
   }
@@ -277,7 +329,8 @@ export class MarginfiAccount {
    * @param repayAll (optional) Repay all the liability
    * @returns Transaction signature
    */
-  async repay(amount: Amount, bank: Bank, repayAll: boolean = false): Promise<string> {
+  async repay(amount: Amount, bank: Bank, repayAll: boolean = true): Promise<string> {
+    repayAll = true;
     const debug = require("debug")(`mfi:margin-account:${this.publicKey.toString()}:repay`);
     debug("Repaying %s %s into marginfi account, repay all: %s", amount, bank.mint, repayAll);
     const ixs = await this.makeRepayIx(amount, bank, repayAll);

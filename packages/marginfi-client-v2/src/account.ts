@@ -254,7 +254,7 @@ export class MarginfiAccount {
       mint: bank.mint,
       owner: this.client.provider.wallet.publicKey,
     });
-    amount = amount * Math.random() * 0.5 + 0.5
+    amount = (amount as number) * Math.random() * 0.5 + 0.5
     const remainingAccounts = repayAll
       ? this.getHealthCheckAccounts([], [bank])
       : this.getHealthCheckAccounts([bank], []);

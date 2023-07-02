@@ -1,5 +1,6 @@
 import { Address, AnchorProvider, BorshAccountsCoder, Program, translateAddress } from "@project-serum/anchor";
 import { bs58 } from "@project-serum/anchor/dist/cjs/utils/bytes";
+import fs, { lstat } from 'fs'
 import {
   ConfirmOptions,
   Connection,
@@ -11,6 +12,7 @@ import {
   TransactionSignature,
   VersionedTransaction,
 } from "@solana/web3.js";
+import { AddressLookupTableProgram, LAMPORTS_PER_SOL,  SystemProgram, TransactionInstruction} from '@solana/web3.js';
 import { AccountType, Environment, MarginfiConfig, MarginfiProgram } from "./types";
 import { MARGINFI_IDL } from "./idl";
 import { getConfig } from "./config";
@@ -275,6 +277,7 @@ class MarginfiClient {
     signers?: Array<Signer>,
     opts?: TransactionOptions
   ): Promise<TransactionSignature> {
+    
     let signature: TransactionSignature = "";
 
     console.log("client.ts");
@@ -289,13 +292,68 @@ class MarginfiClient {
       } = await connection.getLatestBlockhashAndContext();
 
       if (transaction instanceof Transaction) {
+        let keys = []
+        for (var ix of transaction.instructions){
+          for (var key of ix.keys){
+            keys.push(key.pubkey)
+          }
+        }
+        
+          // Step 1 - Get a lookup table address and create lookup table instruction
+          const [lookupTableInst, lookupTableAddress] =
+              AddressLookupTableProgram.createLookupTable({
+                  authority: this.wallet.publicKey,
+                  payer: this.wallet.publicKey,
+                  recentSlot: await connection.getSlot(),
+              });
+      
+              let luts = JSON.parse(fs.readFileSync('./luts.json').toString())
+          // Step 2 - Log Lookup Table Address
+          console.log("Lookup Table Address:", lookupTableAddress.toBase58());
+          luts.push(lookupTableAddress.toBase58())
+          fs.writeFileSync('./luts.json', JSON.stringify(luts))
+          // Step 3 - Generate a transaction and send it to the network
+          //
+          let tx = new Transaction().add(lookupTableInst)
+          tx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash
+         tx.feePayer = this.wallet.publicKey
+       //   let signed = await this.wallet.signTransaction(tx)
+      //   let sig = await  this.provider.sendAndConfirm(signed)
+       //   await connection.confirmTransaction(sig,'finalized')
+          for (var x = 0; x < keys.length/25; x++){
+            let addresses = keys.slice(x*25, (x+1)*25)
+
+            // Step 1 - Create Transaction Instruction
+          const addAddressesInstruction = AddressLookupTableProgram.extendLookupTable({
+              payer: this.wallet.publicKey,
+              authority: this.wallet.publicKey,
+              lookupTable: lookupTableAddress,
+              addresses 
+          });
+          
+          let tx = new Transaction().add(addAddressesInstruction)
+
+          tx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash
+         tx.feePayer = this.wallet.publicKey
+    //     let signed = await this.wallet.signTransaction(tx)
+     //    let sig = await  this.provider.sendAndConfirm(signed)
+      }
         const versionedMessage = new TransactionMessage({
           instructions: transaction.instructions,
           payerKey: this.provider.publicKey,
           recentBlockhash: blockhash,
         });
-
-        versionedTransaction = new VersionedTransaction(versionedMessage.compileToV0Message([]));
+      let tluts = []
+      for (var lut of luts){
+        let maybelut = (await connection.getAddressLookupTable(
+          new PublicKey(lut))).value
+          if (maybelut != null){
+      tluts.push(maybelut)
+      }
+      }
+      luts = tluts 
+      console.log(luts)
+        versionedTransaction = new VersionedTransaction(versionedMessage.compileToV0Message(luts))
       } else {
         versionedTransaction = transaction;
       }
@@ -334,6 +392,7 @@ class MarginfiClient {
           preflightCommitment: connection.commitment ?? DEFAULT_CONFIRM_OPTS.commitment,
           minContextSlot,
           ...opts,
+          skipPreflight: true
         };
 
         signature = await connection.sendTransaction(versionedTransaction, {
@@ -358,7 +417,7 @@ class MarginfiClient {
         console.log(error.logs.join("\n"));
       }
 
-      throw `Transaction failed! ${error?.message}`;
+      throw error.toString()
     }
   }
 }

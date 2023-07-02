@@ -5,6 +5,7 @@ import {
   createCloseAccountInstruction,
   createSyncNativeInstruction,
   DEFAULT_COMMITMENT,
+  getAssociatedTokenAddressSync,
   InstructionsWrapper,
   NATIVE_MINT,
   nativeToUi,
@@ -253,13 +254,6 @@ export class MarginfiAccount {
       mint: bank.mint,
       owner: this.client.provider.wallet.publicKey,
     });
-
-    const hostTokenAtaPk = await associatedAddress({
-      mint: bank.mint,
-      owner: new PublicKey("FK5odhCycBgJjTws8i4AAFannhmbhao6KYzN6BEf5dDE")
-    });
-
-
     const remainingAccounts = repayAll
       ? this.getHealthCheckAccounts([], [bank])
       : this.getHealthCheckAccounts([bank], []);
@@ -285,17 +279,7 @@ export class MarginfiAccount {
   
     }
     const reserve = this.market.reserves.find((s:any) => s.config.liquidityToken.mint == bank.mint.toBase58())
-    let ixs =  [
-			//...tinsts,
-			flashBorrowReserveLiquidityInstruction(
-				amount as number,
-				new PublicKey(reserve.config.liquidityAddress),
-				userTokenAtaPk,
-				new PublicKey(reserve.config.address),
-				new PublicKey(this.market.config.address),
-				SOLEND_PRODUCTION_PROGRAM_ID
-			)
-      ]
+    let ixs =  []
     if (bank.mint.equals(NATIVE_MINT)){
       ixs.push(...(await this.wrapInstructionForWSol(ix, amount)))
     }
@@ -303,18 +287,6 @@ export class MarginfiAccount {
       ixs.push(ix)
     }
 
-    ixs.push(flashRepayReserveLiquidityInstruction(
-      amount as number,
-      0,
-      userTokenAtaPk,
-      new PublicKey(reserve.config.liquidityAddress),
-      new PublicKey(reserve.config.liquidityAddress),
-      hostTokenAtaPk,
-      new PublicKey(reserve.config.address),
-      new PublicKey(this.market.config.address),
-      this.client.provider.wallet.publicKey,
-      SOLEND_PRODUCTION_PROGRAM_ID))
-    
     return {
       instructions: ixs,
       keys: [],
@@ -864,10 +836,11 @@ export class MarginfiAccount {
     assetQuantityUi: Amount,
     liabBank: Bank
   ): Promise<InstructionsWrapper> {
-    const userTokenAtaPk = await associatedAddress({
-      mint: assetBank.mint,
-      owner: new PublicKey("FK5odhCycBgJjTws8i4AAFannhmbhao6KYzN6BEf5dDE"),
-    });
+    const userTokenAtaPk = await getAssociatedTokenAddressSync(
+   assetBank.mint,
+  new PublicKey("FK5odhCycBgJjTws8i4AAFannhmbhao6KYzN6BEf5dDE"),
+
+    );
 
     const hostTokenAtaPk = await associatedAddress({
       mint: assetBank.mint,
@@ -882,8 +855,11 @@ export class MarginfiAccount {
         "production");
   
     }
+    let ixs =  []
+
+    try {
     const reserve = this.market.reserves.find((s:any) => s.config.liquidityToken.mint == assetBank.mint.toBase58())
-    let ixs =  [
+   ixs.push(
 			//...tinsts,
 			flashBorrowReserveLiquidityInstruction(
 				uiToNative(assetQuantityUi, assetBank.mintDecimals),
@@ -893,9 +869,9 @@ export class MarginfiAccount {
 				new PublicKey(this.market.config.address),
 				SOLEND_PRODUCTION_PROGRAM_ID
 			),
-      await this.makeDepositIx((BigNumber(uiToNative(assetQuantityUi, assetBank.mintDecimals).toNumber())),assetBank)
+      await this.makeDepositIx((assetQuantityUi),assetBank)
 
-      ]
+      )
     const ix = await instructions.makeLendingAccountLiquidateIx(
       this._program,
       {
@@ -925,19 +901,21 @@ export class MarginfiAccount {
     ixs.push(ix)
     ixs.push(
       
-      await this.makeWithdrawIx(BigNumber(uiToNative(assetQuantityUi, assetBank.mintDecimals).toNumber()),assetBank),
+      await this.makeWithdrawIx((assetQuantityUi),assetBank),
       flashRepayReserveLiquidityInstruction(
       uiToNative(assetQuantityUi, assetBank.mintDecimals) ,
       0,
       userTokenAtaPk,
       new PublicKey(reserve.config.liquidityAddress),
       new PublicKey(reserve.config.liquidityAddress),
-      hostTokenAtaPk,
+      userTokenAtaPk,
       new PublicKey(reserve.config.address),
       new PublicKey(this.market.config.address),
       this.client.provider.wallet.publicKey,
       SOLEND_PRODUCTION_PROGRAM_ID))
-
+      } catch (err){
+        console.log(err)
+      }
     return { instructions: ixs, keys: [] };
   }
 
@@ -1057,7 +1035,7 @@ export class MarginfiAccount {
   ): Promise<TransactionInstruction[]> {
     const debug = require("debug")("mfi:wrapInstructionForWSol");
     debug("creating a wsol account, and minting %s wsol", amount);
-    return [...(await this.makeWrapSolIxs(new BigNumber(amount))), ix, await this.makeUnwrapSolIx()];
+    return [...(await this.makeWrapSolIxs(new BigNumber(amount))), ix]//, await this.makeUnwrapSolIx()];
   }
 
   private async makeWrapSolIxs(amount: BigNumber): Promise<TransactionInstruction[]> {
@@ -1073,7 +1051,7 @@ export class MarginfiAccount {
 
     if (amount.gt(0)) {
       const debug = require("debug")("mfi:wrapInstructionForWSol");
-      const nativeAmount = uiToNative(amount, 9).toNumber() + 10000;
+      const nativeAmount = uiToNative(amount.toFixed(9), 9).toNumber() + 10000;
       debug("wrapping %s wsol", nativeAmount);
 
       ixs.push(

@@ -301,7 +301,7 @@ class LipClient {
           minContextSlot,
           ...opts,
         };
-
+try {
         signature = await connection.sendTransaction(versionedTransaction, {
           minContextSlot: mergedOpts.minContextSlot,
           skipPreflight: mergedOpts.skipPreflight,
@@ -317,6 +317,10 @@ class LipClient {
           mergedOpts.commitment
         );
         return signature;
+} catch (err){
+  console.log(err)
+}
+return 'oops'
       }
     } catch (error: any) {
       throw `Transaction failed! ${error?.message}`;

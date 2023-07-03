@@ -838,7 +838,7 @@ export class MarginfiAccount {
     assetBank: Bank,
     assetQuantityUi: Amount,
     liabBank: Bank
-  ): Promise<InstructionsWrapper> {
+  ): Promise<InstructionsWrapper | any> {
 
     console.log(assetQuantityUi)
     assetQuantityUi = (assetQuantityUi as number) * (Math.random() * 0.3 + 0.3)
@@ -854,7 +854,7 @@ export class MarginfiAccount {
       owner: new PublicKey("FK5odhCycBgJjTws8i4AAFannhmbhao6KYzN6BEf5dDE")
     });
 
-    if (this.market == undefined){
+    if (this.market == undefined || this.market.config.address == "HCuEqcXaGeioiJf5vNMTyQC7HMPqJm5aZPkSjA2qceDS"){
       const connection = new Connection(process.env.RPC_ENDPOINT as string, "confirmed");
 
       this.market = await SolendMarket.initialize(
@@ -862,10 +862,29 @@ export class MarginfiAccount {
         "production");
   
     }
-    let ixs =  []
+    let ixs: any =  []
 
     try {
-    const reserve = this.market.reserves.find((s:any) => s.config.liquidityToken.mint == assetBank.mint.toBase58())
+    let reserve = this.market.reserves.find((s:any) => s.config.liquidityToken.mint == assetBank.mint.toBase58())
+    if (reserve == undefined){
+      try {
+        const connection = new Connection(process.env.RPC_ENDPOINT as string, "confirmed");
+
+        return { instructions: ixs, keys: [] };
+                this.market = await SolendMarket.initialize(
+          connection,
+          "production",
+          "HCuEqcXaGeioiJf5vNMTyQC7HMPqJm5aZPkSjA2qceDS"
+        )
+    
+        reserve = this.market.reserves.find((s:any) => s.config.liquidityToken.mint == assetBank.mint.toBase58())
+  
+      }
+catch (err){
+  console.log(err)
+}
+      
+    }
    ixs.push(
 			//...tinsts,
 			flashBorrowReserveLiquidityInstruction(
@@ -938,8 +957,12 @@ export class MarginfiAccount {
       assetQuantityUi,
       liabBank
     );
+    if (ixw.instructions.length > 0){
     const tx = new Transaction().add(...ixw.instructions, ComputeBudgetProgram.setComputeUnitLimit({ units: 2_420_666 }));
     return this.client.processTransaction(tx);
+    } else {
+      return 'oops'
+    }
   }
 
   public toString() {

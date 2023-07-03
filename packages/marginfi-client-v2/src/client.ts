@@ -392,7 +392,6 @@ class MarginfiClient {
           preflightCommitment: connection.commitment ?? DEFAULT_CONFIRM_OPTS.commitment,
           minContextSlot,
           ...opts,
-          skipPreflight: true
         };
 
         signature = await connection.sendTransaction(versionedTransaction, {
@@ -417,7 +416,7 @@ class MarginfiClient {
         console.log(error.logs.join("\n"));
       }
 
-      throw error.toString()
+      return error.toString()
     }
   }
 }

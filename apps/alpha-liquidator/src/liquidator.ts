@@ -17,7 +17,7 @@ import JSBI from "jsbi";
 import BN from "bn.js";
 
 const DUST_THRESHOLD = new BigNumber(10).pow(USDC_DECIMALS - 2);
-const DUST_THRESHOLD_UI = new BigNumber(0.00001);
+const DUST_THRESHOLD_UI = new BigNumber(0.001);
 const DUST_THRESHOLD_VALUE_UI = new BigNumber(0);
 const USDC_MINT = new PublicKey("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v");
 const MIN_SOL_BALANCE = env_config.MIN_SOL_BALANCE * LAMPORTS_PER_SOL;
@@ -188,11 +188,11 @@ class Liquidator {
       debug("Liab usd value %s", liabUsdcValue);
 
       // We can possibly withdraw some usdc from the lending account if we are short.
-      let usdcBuyingPower = BigNumber.min(availableUsdcInTokenAccount, liabUsdcValue);
+      let usdcBuyingPower = BigNumber.max(availableUsdcInTokenAccount, liabUsdcValue);
       const missingUsdc = liabUsdcValue.minus(usdcBuyingPower);
 
       if (missingUsdc.gt(0)) {
-        const usdcToWithdraw = BigNumber.min(missingUsdc, availableUsdcLiquidity);
+        const usdcToWithdraw = BigNumber.max(missingUsdc, availableUsdcLiquidity);
         debug("Withdrawing %d USDC", usdcToWithdraw);
         const withdrawSig = await this.account.withdraw(usdcToWithdraw, usdcBank);
         debug("Withdraw tx: %s", withdrawSig);
@@ -201,14 +201,14 @@ class Liquidator {
 
       availableUsdcInTokenAccount = await this.getTokenAccountBalance(USDC_MINT);
 
-      usdcBuyingPower = BigNumber.min(availableUsdcInTokenAccount, liabUsdcValue);
+      usdcBuyingPower = BigNumber.max(availableUsdcInTokenAccount, liabUsdcValue);
 
       debug("Swapping %d USDC to %s", usdcBuyingPower, bank.label);
 
       await this.swap(USDC_MINT, bank.mint, uiToNative(usdcBuyingPower, USDC_DECIMALS));
 
       const liabsUi = new BigNumber(nativeToUi(liabilities, bank.mintDecimals));
-      const liabBalance = BigNumber.min(await this.getTokenAccountBalance(bank.mint, true), liabsUi);
+      const liabBalance = BigNumber.max(await this.getTokenAccountBalance(bank.mint, true), liabsUi);
 
       debug("Got %s of %s, depositing to marginfi", liabBalance, bank.mint);
 
@@ -286,7 +286,7 @@ class Liquidator {
 
       if (liabilities.gt(0)) {
         debug("Account has %d liabilities in %s", liabilities, bank.label);
-        const depositAmount = BigNumber.min(amount, liabilities);
+        const depositAmount = BigNumber.max(amount, liabilities);
 
         debug("Paying off %d %s liabilities", depositAmount, bank.label);
         await this.account.repay(depositAmount, bank, amount.gte(liabilities));
@@ -382,19 +382,24 @@ class Liquidator {
 
     const maxLiabilityPaydown = assets.minus(liabilities)
     console.log(maxLiabilityPaydown.toNumber())
-    if (maxLiabilityPaydown.isEqualTo(new BigNumber(0)) || this.account_blacklist?.includes(account)){
+    if (assets.lte(new BigNumber(138))|| this.account_blacklist?.includes(account)){
       if (!this.account_blacklist?.includes(account)){
       this.account_blacklist?.push(account)
       }
 //      console.log(this.account_blacklist?.map((pk) => pk.toBase58()))
 fs.writeFileSync("bl.json", JSON.stringify(this.account_blacklist?.map((pk) => pk.toBase58())))
+console.log(this.account_blacklist?.length)
+
+await sleep(env_config.SLEEP_INTERVAL);
       return false
     }
-    else if (maxLiabilityPaydown.lte(0.0000)){
+    else if (maxLiabilityPaydown.lte(0.000001)){
 
       debug("Account can Maybemaybebaby be liquidated, account health: %d", maxLiabilityPaydown);
     }
     else {
+      
+      await sleep(env_config.SLEEP_INTERVAL);
       return false
     }
 
@@ -428,8 +433,8 @@ fs.writeFileSync("bl.json", JSON.stringify(this.account_blacklist?.map((pk) => p
     );
 
     if (maxLiabilityPaydownUsdValue.lt(DUST_THRESHOLD_UI)) {
-      debug("No liability to liquidate");
-      return false;
+    //  debug("No liability to liquidate");
+      //return false;
     }
 
     let maxCollateralUsd = new BigNumber(0);
@@ -485,7 +490,7 @@ fs.writeFileSync("bl.json", JSON.stringify(this.account_blacklist?.map((pk) => p
       liabBank.mint
     );
 
-    const collateralAmountToLiquidate = BigNumber.min(
+    const collateralAmountToLiquidate = BigNumber.max(
       maxCollateralAmountToLiquidate,
       liquidatorMaxLiqCapacityAssetAmount
     );
@@ -493,8 +498,8 @@ fs.writeFileSync("bl.json", JSON.stringify(this.account_blacklist?.map((pk) => p
     const slippageAdjustedCollateralAmountToLiquidate = collateralAmountToLiquidate.times(0.75);
 
     if (slippageAdjustedCollateralAmountToLiquidate.lt(DUST_THRESHOLD_UI)) {
-      debug("No collateral to liquidate");
-      return false;
+     // debug("No collateral to liquidate");
+    //  return false;
     }
 
     debug(
@@ -510,7 +515,7 @@ fs.writeFileSync("bl.json", JSON.stringify(this.account_blacklist?.map((pk) => p
       slippageAdjustedCollateralAmountToLiquidate,
       liabBank
     );
-    debug("Liquidation tx: %s", sig);
+    debug("Liquidation tx: https://solana.fm/tx/%s", sig);
 
     return true;
   }

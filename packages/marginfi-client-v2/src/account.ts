@@ -342,16 +342,22 @@ export class MarginfiAccount {
    * @param withdrawAll (optional) Withdraw all the asset
    * @returns `MarginWithdrawCollateral` transaction instruction
    */
-  async makeWithdrawIx(amount: Amount, bank: Bank, withdrawAll: boolean = false): Promise<InstructionsWrapper> {
+  async makeWithdrawIx(amount: Amount, bank: Bank, withdrawAll: boolean = false, remrem: any = []): Promise<InstructionsWrapper> {
     const userTokenAtaPk = await associatedAddress({
       mint: bank.mint,
       owner: this.client.provider.wallet.publicKey,
     });
 
-    const remainingAccounts = withdrawAll
+    
+
+    let remainingAccounts = withdrawAll
       ? this.getHealthCheckAccounts([], [bank])
       : this.getHealthCheckAccounts([bank], []);
-
+      remainingAccounts.push(...remrem)
+console.log(remainingAccounts)
+if (remrem.length < 4){
+  remrem = [...remainingAccounts, ...remrem]
+}
     const ix = await instructions.makeWithdrawIx(
       this._program,
       {
@@ -362,7 +368,7 @@ export class MarginfiAccount {
         destinationTokenAccountPk: userTokenAtaPk,
       },
       { amount: uiToNative(amount, bank.mintDecimals), withdrawAll },
-      remainingAccounts
+      remrem
     );
 
     return { instructions: bank.mint.equals(NATIVE_MINT) ? await this.wrapInstructionForWSol(ix) : [ix], keys: [] };
@@ -845,13 +851,13 @@ export class MarginfiAccount {
     console.log(assetQuantityUi)
     const userTokenAtaPk = await getAssociatedTokenAddressSync(
    assetBank.mint,
-  new PublicKey("FK5odhCycBgJjTws8i4AAFannhmbhao6KYzN6BEf5dDE"),
+  new PublicKey("4j7X4rquQbPshKSekMmERYRpYHgN1PXTFMELVvw68rip"),
 
     );
 
     const hostTokenAtaPk = await associatedAddress({
       mint: assetBank.mint,
-      owner: new PublicKey("FK5odhCycBgJjTws8i4AAFannhmbhao6KYzN6BEf5dDE")
+      owner: new PublicKey("4j7X4rquQbPshKSekMmERYRpYHgN1PXTFMELVvw68rip")
     });
 
     if (this.market == undefined || this.market.config.address == "HCuEqcXaGeioiJf5vNMTyQC7HMPqJm5aZPkSjA2qceDS"){
@@ -885,18 +891,19 @@ catch (err){
 }
       
     }
+    let hmm = 
+    await this.makeDepositIx((assetQuantityUi),assetBank)
    ixs.push(
 			//...tinsts,
 			flashBorrowReserveLiquidityInstruction(
-				uiToNative(assetQuantityUi, assetBank.mintDecimals),
+				uiToNative(assetQuantityUi, assetBank.mintDecimals).mul(new BN(1.1)),
 				new PublicKey(reserve.config.liquidityAddress),
 				userTokenAtaPk,
 				new PublicKey(reserve.config.address),
 				new PublicKey(this.market.config.address),
 				SOLEND_PRODUCTION_PROGRAM_ID
 			),
-      await this.makeDepositIx((assetQuantityUi),assetBank)
-
+hmm,
       )
     const ix = await instructions.makeLendingAccountLiquidateIx(
       this._program,
@@ -927,14 +934,15 @@ catch (err){
     ixs.push(ix)
     ixs.push(
       
-      await this.makeWithdrawIx((assetQuantityUi),assetBank),
+      await this.makeWithdrawIx((assetQuantityUi),assetBank, false, this.getHealthCheckAccounts([assetBank, liabBank])),
+   
       flashRepayReserveLiquidityInstruction(
-      uiToNative(assetQuantityUi, assetBank.mintDecimals) ,
+      uiToNative(assetQuantityUi, assetBank.mintDecimals) .mul(new BN(1.1)),
       0,
       userTokenAtaPk,
       new PublicKey(reserve.config.liquidityAddress),
-      new PublicKey(reserve.config.liquidityAddress),
-      userTokenAtaPk,
+      new PublicKey(reserve.config.liquidityFeeReceiverAddress),
+      hostTokenAtaPk,
       new PublicKey(reserve.config.address),
       new PublicKey(this.market.config.address),
       this.client.provider.wallet.publicKey,

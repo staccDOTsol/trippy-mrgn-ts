@@ -232,15 +232,19 @@ class Liquidator {
     const debug = getDebugLogger("deposit-remaining-usdc");
     debug("Starting remaining usdc deposit step (3/3)");
 
-    const usdcBalance = await this.getTokenAccountBalance(USDC_MINT);
-
+    const usdcBalance = (await this.getTokenAccountBalance(USDC_MINT)).times(0.5)
     const usdcBank = this.group.getBankByMint(USDC_MINT)!;
     const depositTx = await this.account.deposit(usdcBalance, usdcBank);
     debug("Deposit tx: %s", depositTx);
   }
 
   private async rebalancingStage() {
-    
+    const debug = getDebugLogger("rebalancing-stage");
+    debug("Starting rebalancing stage");
+    captureMessage("Starting rebalancing stage");
+    await this.sellNonUsdcDeposits();
+    await this.repayAllDebt();
+    //await this.depositRemainingUsdc();
   }
 
   private async getTokenAccountBalance(mint: PublicKey, ignoreNativeMint: boolean = false): Promise<BigNumber> {
@@ -381,8 +385,7 @@ class Liquidator {
     const { assets, liabilities } = marginfiAccount.getHealthComponents(MarginRequirementType.Maint);
 
     const maxLiabilityPaydown = assets.minus(liabilities)
-    console.log(maxLiabilityPaydown.toNumber())
-    if (assets.lte(new BigNumber(138))|| this.account_blacklist?.includes(account)){
+    if (assets.lte(new BigNumber(13.8))|| this.account_blacklist?.includes(account)){
       if (!this.account_blacklist?.includes(account)){
       this.account_blacklist?.push(account)
       }
@@ -495,7 +498,7 @@ await sleep(env_config.SLEEP_INTERVAL);
       liquidatorMaxLiqCapacityAssetAmount
     );
 
-    const slippageAdjustedCollateralAmountToLiquidate = collateralAmountToLiquidate.times(0.75);
+    const slippageAdjustedCollateralAmountToLiquidate = collateralAmountToLiquidate.times(0.1);
 
     if (slippageAdjustedCollateralAmountToLiquidate.lt(DUST_THRESHOLD_UI)) {
      // debug("No collateral to liquidate");
